@@ -1,12 +1,9 @@
 package kr.crownrpg.infra.core.internal;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.lettuce.core.RedisClient;
 import kr.crownrpg.infra.api.context.InfraContext;
 import kr.crownrpg.infra.api.redis.RedisBus;
 import kr.crownrpg.infra.core.redis.LettuceRedisBus;
 import kr.crownrpg.infra.core.redis.RedisClientFactory;
-import kr.crownrpg.infra.core.redis.RedisCodec;
 
 import java.util.Objects;
 
@@ -18,22 +15,18 @@ import java.util.Objects;
 public final class InfraCoreBootstrap {
 
     private final InfraContext context;
-    private final RedisClientFactory.RedisConnectionSpec redisSpec;
+    private final RedisClientFactory redisFactory;
 
     private LettuceRedisBus redisBus;
 
-    public InfraCoreBootstrap(InfraContext context, RedisClientFactory.RedisConnectionSpec redisSpec) {
+    public InfraCoreBootstrap(InfraContext context, RedisClientFactory redisFactory) {
         this.context = Objects.requireNonNull(context, "context");
-        this.redisSpec = Objects.requireNonNull(redisSpec, "redisSpec");
+        this.redisFactory = Objects.requireNonNull(redisFactory, "redisFactory");
     }
 
     public void start() {
-        // Jackson은 core에서 고정 세팅 가능(필요시 v2에서 modules 추가)
-        ObjectMapper mapper = new ObjectMapper();
-        RedisCodec codec = new RedisCodec(mapper);
-
-        RedisClient client = RedisClientFactory.create(redisSpec);
-        this.redisBus = new LettuceRedisBus(client, codec);
+        this.redisBus = new LettuceRedisBus(redisFactory);
+        this.redisBus.start();
     }
 
     public RedisBus redisBus() {
@@ -43,7 +36,7 @@ public final class InfraCoreBootstrap {
 
     public void stop() {
         if (redisBus != null) {
-            redisBus.shutdown();
+            redisBus.stop();
             redisBus = null;
         }
     }
