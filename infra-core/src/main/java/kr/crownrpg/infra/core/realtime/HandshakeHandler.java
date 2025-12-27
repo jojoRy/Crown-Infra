@@ -5,12 +5,11 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleStateEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
-import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Handles initial handshake to validate environment, token, and allowed peers.
@@ -31,13 +30,13 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
     static final int PROTOCOL_VERSION = 1;
 
     private static final int MAX_FRAME_LENGTH = 1024 * 1024; // 1MB safety
-    private static final Logger LOGGER = Logger.getLogger(HandshakeHandler.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(HandshakeHandler.class);
 
     private final boolean serverSide;
     private final String environment;
     private final String selfServerId;
     private final String token;
-    private final Set<String> allowedPeerIds;
+    private final RealtimeChannelSettings settings;
     private final ChannelRegistry registry;
     private final RealtimeMessageHandler messageHandler;
     private final HandshakeCallback callback;
@@ -46,7 +45,7 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
                      String environment,
                      String selfServerId,
                      String token,
-                     Set<String> allowedPeerIds,
+                     RealtimeChannelSettings settings,
                      ChannelRegistry registry,
                      RealtimeMessageHandler messageHandler,
                      HandshakeCallback callback) {
@@ -54,7 +53,7 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
         this.environment = Objects.requireNonNull(environment, "environment");
         this.selfServerId = Objects.requireNonNull(selfServerId, "selfServerId");
         this.token = Objects.requireNonNull(token, "token");
-        this.allowedPeerIds = Objects.requireNonNull(allowedPeerIds, "allowedPeerIds");
+        this.settings = Objects.requireNonNull(settings, "settings");
         if (serverSide && registry == null) {
             throw new IllegalArgumentException("registry is required on server side");
         }
@@ -88,7 +87,7 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
             case TYPE_REJECT -> handleReject(ctx, buffer);
             default -> {
                 buffer.release();
-                LOGGER.warning("Dropping unexpected frame before handshake completion: type=" + type);
+                LOGGER.warn("핸드셰이크 완료 전 예상치 못한 프레임을 드롭합니다: type={}", type);
                 ctx.close();
             }
         }
@@ -97,30 +96,30 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
     private void handleHello(ChannelHandlerContext ctx, ByteBuf buffer) {
         if (!serverSide) {
             buffer.release();
-            LOGGER.warning("Client received HELLO unexpectedly; closing.");
+            LOGGER.warn("클라이언트가 예상치 못한 HELLO를 수신하여 연결을 종료합니다");
             ctx.close();
             return;
         }
         Protocol.HelloFrame frame = Protocol.decodeHello(buffer, MAX_FRAME_LENGTH);
         buffer.release();
         if (frame.protocolVersion() != PROTOCOL_VERSION) {
-            sendReject(ctx, "Unsupported protocol version: " + frame.protocolVersion());
+            sendReject(ctx, "지원되지 않는 프로토콜 버전: " + frame.protocolVersion());
             return;
         }
         if (!environment.equals(frame.environment())) {
-            sendReject(ctx, "Environment mismatch");
+            sendReject(ctx, "환경 불일치 - 요청 환경: " + frame.environment());
             return;
         }
         if (!token.equals(frame.token())) {
-            sendReject(ctx, "Invalid token");
+            sendReject(ctx, "토큰 불일치");
             return;
         }
-        if (!allowedPeerIds.contains(frame.serverId())) {
-            sendReject(ctx, "Peer not allowed: " + frame.serverId());
+        if (!settings.isAllowedPeer(frame.serverId())) {
+            sendReject(ctx, "허용되지 않은 peer: " + frame.serverId());
             return;
         }
         if (selfServerId.equals(frame.serverId())) {
-            sendReject(ctx, "Self loop disallowed");
+            sendReject(ctx, "자기 자신으로의 연결은 허용되지 않습니다");
             return;
         }
         Channel existing = registry.register(frame.serverId(), ctx.channel());
@@ -138,24 +137,24 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
     private void handleWelcome(ChannelHandlerContext ctx, ByteBuf buffer) {
         if (serverSide) {
             buffer.release();
-            LOGGER.warning("Server received WELCOME unexpectedly; closing.");
+            LOGGER.warn("서버가 예상치 못한 WELCOME 프레임을 수신하여 연결을 종료합니다");
             ctx.close();
             return;
         }
         Protocol.WelcomeFrame frame = Protocol.decodeWelcome(buffer, MAX_FRAME_LENGTH);
         buffer.release();
         if (frame.protocolVersion() != PROTOCOL_VERSION) {
-            LOGGER.warning("Protocol mismatch from server; closing.");
+            LOGGER.warn("프로토콜 버전 불일치로 연결을 종료합니다 (수신 {} vs 기대 {})", frame.protocolVersion(), PROTOCOL_VERSION);
             ctx.close();
             return;
         }
         if (!environment.equals(frame.environment())) {
-            LOGGER.warning("Environment mismatch from server; closing.");
+            LOGGER.warn("환경 불일치로 연결을 종료합니다 (수신 {} vs 기대 {})", frame.environment(), environment);
             ctx.close();
             return;
         }
-        if (!allowedPeerIds.contains(frame.serverId())) {
-            LOGGER.warning("Server not in allowed peers: " + frame.serverId());
+        if (!settings.isAllowedPeer(frame.serverId())) {
+            LOGGER.warn("허용되지 않은 서버 {}에서 연결 시도", frame.serverId());
             ctx.close();
             return;
         }
@@ -168,7 +167,7 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
     private void handleReject(ChannelHandlerContext ctx, ByteBuf buffer) {
         Protocol.RejectFrame frame = Protocol.decodeReject(buffer, MAX_FRAME_LENGTH);
         buffer.release();
-        LOGGER.warning("Handshake rejected: " + frame.reason());
+        LOGGER.warn("핸드셰이크 거부: {}", frame.reason());
         if (callback != null) {
             callback.onRejected(frame.reason());
         }
@@ -186,7 +185,7 @@ class HandshakeHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        LOGGER.log(Level.WARNING, "Handshake error", cause);
+        LOGGER.warn("핸드셰이크 처리 중 오류", cause);
         ctx.close();
     }
 

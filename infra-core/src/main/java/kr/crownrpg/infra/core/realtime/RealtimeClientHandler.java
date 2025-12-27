@@ -4,10 +4,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.timeout.IdleStateEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import static kr.crownrpg.infra.core.realtime.HandshakeHandler.Protocol;
 import static kr.crownrpg.infra.core.realtime.HandshakeHandler.TYPE_DATA;
@@ -19,7 +19,7 @@ class RealtimeClientHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private final String selfServerId;
     private final String remoteServerId;
     private final RealtimeMessageHandler messageHandler;
-    private final Logger logger = Logger.getLogger(RealtimeClientHandler.class.getName());
+    private final Logger logger = LoggerFactory.getLogger(RealtimeClientHandler.class);
 
     RealtimeClientHandler(String selfServerId,
                           String remoteServerId,
@@ -40,7 +40,7 @@ class RealtimeClientHandler extends SimpleChannelInboundHandler<ByteBuf> {
             return;
         }
         if (!remoteServerId.equals(frame.sourceServerId())) {
-            logger.warning("Dropping data from unexpected peer: " + frame.sourceServerId());
+            logger.warn("예상치 못한 피어 {} 로부터의 데이터를 드롭합니다", frame.sourceServerId());
             return;
         }
         messageHandler.onMessage(frame.sourceServerId(), frame.payload());
@@ -57,7 +57,7 @@ class RealtimeClientHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        logger.log(Level.WARNING, "Realtime client handler error", cause);
+        logger.warn("실시간 클라이언트 처리 중 오류", cause);
         ctx.close();
     }
 }

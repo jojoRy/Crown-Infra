@@ -12,14 +12,13 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.timeout.IdleStateHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Netty server endpoint used by the Velocity proxy to route realtime payloads.
@@ -31,10 +30,10 @@ public final class NettyServer {
     private final String environment;
     private final String serverId;
     private final String token;
-    private final Set<String> allowedPeerIds;
+    private final RealtimeChannelSettings settings;
     private final ChannelRegistry registry;
     private final RealtimeMessageHandler messageHandler;
-    private final Logger logger = Logger.getLogger(NettyServer.class.getName());
+    private final Logger logger = LoggerFactory.getLogger(NettyServer.class);
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private EventLoopGroup bossGroup;
@@ -46,7 +45,7 @@ public final class NettyServer {
                        String environment,
                        String serverId,
                        String token,
-                       Set<String> allowedPeerIds,
+                       RealtimeChannelSettings settings,
                        ChannelRegistry registry,
                        RealtimeMessageHandler messageHandler) {
         this.bindHost = Objects.requireNonNull(bindHost, "bindHost");
@@ -54,7 +53,7 @@ public final class NettyServer {
         this.environment = Objects.requireNonNull(environment, "environment");
         this.serverId = Objects.requireNonNull(serverId, "serverId");
         this.token = Objects.requireNonNull(token, "token");
-        this.allowedPeerIds = Objects.requireNonNull(allowedPeerIds, "allowedPeerIds");
+        this.settings = Objects.requireNonNull(settings, "settings");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.messageHandler = Objects.requireNonNull(messageHandler, "messageHandler");
     }
@@ -77,7 +76,7 @@ public final class NettyServer {
                                     .addLast(new IdleStateHandler(0, 0, 120, TimeUnit.SECONDS))
                                     .addLast(new LengthFieldBasedFrameDecoder(1_048_576, 0, 4, 0, 4))
                                     .addLast(new LengthFieldPrepender(4))
-                                    .addLast(new HandshakeHandler(true, environment, serverId, token, allowedPeerIds, registry, messageHandler, null));
+                                    .addLast(new HandshakeHandler(true, environment, serverId, token, settings, registry, messageHandler, null));
                         }
                     });
             ChannelFuture future = bootstrap.bind(new InetSocketAddress(bindHost, port)).sync();
@@ -86,7 +85,7 @@ public final class NettyServer {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while starting Netty server", e);
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to start Netty realtime server", e);
+            logger.error("Netty 실시간 서버 시작 실패", e);
             stop();
             throw new IllegalStateException("Failed to start Netty realtime server", e);
         }

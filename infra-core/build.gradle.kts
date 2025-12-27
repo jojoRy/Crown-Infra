@@ -21,6 +21,9 @@ dependencies {
 
     // ✅ Netty realtime channel
     implementation("io.netty:netty-handler:4.1.110.Final")
+
+    // ✅ Logging (SLF4J API only, 구현체는 플랫폼에서 제공)
+    implementation("org.slf4j:slf4j-api:1.7.36")
 }
 
 java {

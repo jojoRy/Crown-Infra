@@ -13,6 +13,8 @@ import kr.crownrpg.infra.api.message.InfraMessage;
 import kr.crownrpg.infra.api.redis.RedisBus;
 import kr.crownrpg.infra.api.redis.RedisMessageHandler;
 import kr.crownrpg.infra.api.redis.RedisMessageRules;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -27,8 +29,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * RedisBus implementation backed by Lettuce Pub/Sub.
@@ -41,27 +42,34 @@ import java.util.logging.Logger;
 public class LettuceRedisBus implements RedisBus {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final Logger LOGGER = Logger.getLogger(LettuceRedisBus.class.getName());
-    private static final int EXECUTOR_POOL_SIZE = 4;
-    private static final int EXECUTOR_QUEUE_CAPACITY = 256;
+    private static final Logger LOGGER = LoggerFactory.getLogger(LettuceRedisBus.class);
 
     private final RedisClientFactory clientFactory;
     private final String environment;
     private final String serverId;
+    private final RedisBusSettings settings;
     private final Map<String, CopyOnWriteArrayList<RedisMessageHandler>> pendingSubscriptions = new ConcurrentHashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
-    private final ExecutorService executor = createExecutor();
+    private final AtomicLong callerRunsCount = new AtomicLong(0);
+    private final AtomicLong queueSaturationWarnings = new AtomicLong(0);
+    private final ExecutorService executor;
 
     private RedisClient client;
     private StatefulRedisConnection<String, String> publishConnection;
     private StatefulRedisPubSubConnection<String, String> subscribeConnection;
 
     public LettuceRedisBus(RedisClientFactory clientFactory, InfraContext context) {
+        this(clientFactory, context, RedisBusSettings.defaults());
+    }
+
+    public LettuceRedisBus(RedisClientFactory clientFactory, InfraContext context, RedisBusSettings settings) {
         this.clientFactory = Objects.requireNonNull(clientFactory, "clientFactory");
         Objects.requireNonNull(context, "context");
         this.environment = context.environment();
         this.serverId = context.serverId();
+        this.settings = Objects.requireNonNull(settings, "settings");
+        this.executor = createExecutor(settings);
     }
 
     @Override
@@ -107,14 +115,8 @@ public class LettuceRedisBus implements RedisBus {
                 }
             });
 
-            RedisPubSubCommands<String, String> commands = subscribeConnection.sync();
             for (String channel : pendingSubscriptions.keySet()) {
-                try {
-                    commands.subscribe(channel);
-                } catch (Exception e) {
-                    // 버스는 계속 동작하고, 실패 이유만 기록한다.
-                    LOGGER.log(Level.WARNING, "시작 시 채널 '" + channel + "' 구독에 실패했습니다", e);
-                }
+                subscribeWithRetry(channel);
             }
         } catch (Exception e) {
             started.set(false);
@@ -150,12 +152,7 @@ public class LettuceRedisBus implements RedisBus {
         }
 
         if (started.get() && channelWasEmpty) {
-            try {
-                subscribeConnection.sync().subscribe(channel);
-            } catch (Exception e) {
-                // 버스는 계속 동작하며, 의도는 pendingSubscriptions에 남겨둔다.
-                LOGGER.log(Level.WARNING, "채널 '" + channel + "' 구독에 실패했습니다", e);
-            }
+            subscribeWithRetry(channel);
         }
     }
 
@@ -172,7 +169,7 @@ public class LettuceRedisBus implements RedisBus {
             commands.publish(channel, payload);
         } catch (Exception e) {
             // 발행 실패로 버스가 중단되지 않도록 한다.
-            LOGGER.log(Level.WARNING, "채널 '" + channel + "'에 메시지 발행에 실패했습니다", e);
+            LOGGER.warn("채널 '{}'에 메시지 발행에 실패했습니다", channel, e);
         }
     }
 
@@ -186,7 +183,7 @@ public class LettuceRedisBus implements RedisBus {
         try {
             message = OBJECT_MAPPER.readValue(json, InfraMessage.class);
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "채널 '" + channel + "'에서 InfraMessage 역직렬화에 실패했습니다", e);
+            LOGGER.warn("채널 '{}'에서 InfraMessage 역직렬화에 실패했습니다", channel, e);
             return;
         }
         if (!RedisMessageRules.shouldProcess(message, environment, serverId)) {
@@ -195,11 +192,15 @@ public class LettuceRedisBus implements RedisBus {
         List<RedisMessageHandler> channelHandlers = List.copyOf(pendingSubscriptions.getOrDefault(channel, new CopyOnWriteArrayList<>()));
         for (RedisMessageHandler handler : channelHandlers) {
             executor.submit(() -> {
+                long start = System.nanoTime();
                 try {
                     handler.onMessage(channel, message);
                 } catch (Exception e) {
                     // 핸들러 실패는 다른 핸들러나 버스 생명주기에 영향을 주지 않는다.
-                    LOGGER.log(Level.WARNING, "채널 '" + channel + "'의 핸들러 실행 중 오류", e);
+                    LOGGER.warn("채널 '{}'의 핸들러 실행 중 오류", channel, e);
+                } finally {
+                    long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+                    LOGGER.info("채널 '{}' 메시지 처리 완료 ({} ms)", channel, elapsedMs);
                 }
             });
         }
@@ -219,7 +220,7 @@ public class LettuceRedisBus implements RedisBus {
         }
     }
 
-    private ExecutorService createExecutor() {
+    private ExecutorService createExecutor(RedisBusSettings settings) {
         ThreadFactory threadFactory = new ThreadFactory() {
             private final AtomicInteger sequence = new AtomicInteger(1);
 
@@ -232,14 +233,46 @@ public class LettuceRedisBus implements RedisBus {
             }
         };
         return new ThreadPoolExecutor(
-                EXECUTOR_POOL_SIZE,
-                EXECUTOR_POOL_SIZE,
+                settings.executorPoolSize(),
+                settings.executorPoolSize(),
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(EXECUTOR_QUEUE_CAPACITY),
+                new ArrayBlockingQueue<>(settings.executorQueueCapacity()),
                 threadFactory,
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                (task, executor) -> {
+                    long totalCallerRuns = callerRunsCount.incrementAndGet();
+                    long warnings = queueSaturationWarnings.incrementAndGet();
+                    // 큐 포화 시 호출자 스레드에서 실행되며, WARN으로 노출해 관측 가능하게 한다.
+                    LOGGER.warn("RedisBus 실행기 큐 포화 - CallerRuns 적용 (누적 {}회, 경고 {}회)", totalCallerRuns, warnings);
+                    // 대량 메시지 시에도 버스가 완전히 멈추지 않도록 호출자 스레드에서 실행한다.
+                    if (!executor.isShutdown()) {
+                        task.run();
+                    }
+                }
         );
+    }
+
+    private void subscribeWithRetry(String channel) {
+        RedisPubSubCommands<String, String> commands = subscribeConnection.sync();
+        int attempts = 0;
+        while (attempts < settings.subscribeRetryAttempts()) {
+            attempts++;
+            try {
+                commands.subscribe(channel);
+                return;
+            } catch (Exception e) {
+                LOGGER.warn("채널 '{}' 구독에 실패했습니다 (시도 {}/{})", channel, attempts, settings.subscribeRetryAttempts(), e);
+                if (attempts < settings.subscribeRetryAttempts()) {
+                    try {
+                        Thread.sleep(settings.subscribeRetryDelay().toMillis());
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        LOGGER.error("채널 '{}' 구독에 모두 실패했습니다 - 설정과 네트워크 상태를 점검하십시오", channel);
     }
 
     private void cleanup() {
