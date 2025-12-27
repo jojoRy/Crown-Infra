@@ -3,10 +3,10 @@ package kr.crownrpg.infra.core.redis;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.RedisClient;
-import io.lettuce.core.api.stateful.StatefulRedisConnection;
-import io.lettuce.core.api.stateful.StatefulRedisPubSubConnection;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.StatefulRedisPubSubConnection;
 import io.lettuce.core.api.sync.RedisCommands;
-import io.lettuce.core.pubsub.RedisPubSubAdapter;
+import io.lettuce.core.pubsub.RedisPubSubListener;
 import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import kr.crownrpg.infra.api.message.InfraMessage;
 import kr.crownrpg.infra.api.redis.RedisBus;
@@ -72,10 +72,31 @@ public class LettuceRedisBus implements RedisBus {
             client = clientFactory.createClient();
             publishConnection = client.connect();
             subscribeConnection = client.connectPubSub();
-            subscribeConnection.addListener(new RedisPubSubAdapter<>() {
+            subscribeConnection.addListener(new RedisPubSubListener<>() {
                 @Override
                 public void message(String channel, String message) {
                     dispatchMessage(channel, message);
+                }
+
+                @Override
+                public void message(String pattern, String channel, String message) {
+                    dispatchMessage(channel, message);
+                }
+
+                @Override
+                public void subscribed(String channel, long count) {
+                }
+
+                @Override
+                public void psubscribed(String pattern, long count) {
+                }
+
+                @Override
+                public void unsubscribed(String channel, long count) {
+                }
+
+                @Override
+                public void punsubscribed(String pattern, long count) {
                 }
             });
 
