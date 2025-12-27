@@ -1,0 +1,8 @@
+{
+  "id": "crowninfra",
+  "name": "CrownInfra",
+  "version": "1.0.0",
+  "description": "CrownRPG Infra binder (Velocity) - MySQL(Hikari) + Redis(Lettuce)",
+  "authors": ["jjoRy"],
+  "main": "kr.crownrpg.infra.velocity.CrownInfraVelocityPlugin"
+}

@@ -1,0 +1,31 @@
+# CrownInfra (Paper)
+environment: "prod"
+server-id: "village-1"
+
+database:
+  host: "127.0.0.1"
+  port: 3306
+  database: "crownrpg"
+  username: "root"
+  password: "password"
+
+  # Hikari
+  max-pool-size: 10
+  min-idle: 2
+  connection-timeout-ms: 3000
+
+  # DB worker threads (async query executor)
+  pool-threads: 4
+
+  # JDBC options
+  use-ssl: false
+  server-timezone: "UTC"
+  character-encoding: "utf8"
+
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  ssl: false
+  password: ""      # 없으면 빈 문자열
+  timeout-ms: 3000
+  client-name: "CrownInfra-Paper"

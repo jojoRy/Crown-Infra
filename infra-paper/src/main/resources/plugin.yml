@@ -1,0 +1,8 @@
+name: CrownInfra
+version: '1.0.0-SNAPSHOT'
+main: kr.crownrpg.infra.paper.CrownInfraPlugin
+api-version: '1.21'
+load: STARTUP
+
+depend:
+  - CrownLib
