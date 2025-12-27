@@ -1,6 +1,5 @@
 package kr.crownrpg.infra.velocity.bootstrap;
 
-import kr.crownrpg.lib.service.ServiceRegistry;
 import kr.crownrpg.infra.api.context.InfraContext;
 import kr.crownrpg.infra.api.database.DatabaseService;
 import kr.crownrpg.infra.api.redis.RedisBus;
@@ -56,10 +55,6 @@ public final class InfraBootstrap {
 
             this.pubSubBootstrap = new VelocityPubSubBootstrap(logger, redisBinder.getBus(), context);
             pubSubBootstrap.start();
-
-            registerService(InfraContext.class, context);
-            registerService(RedisBus.class, redisBinder.getBus());
-            registerService(DatabaseService.class, databaseBinder.getService());
 
             logger.info("CrownInfraVelocity bootstrap completed for " + context);
             started = true;
@@ -135,14 +130,4 @@ public final class InfraBootstrap {
         throw new IllegalArgumentException("Invalid configuration section: " + value);
     }
 
-    private void registerService(Class<?> serviceType, Object instance) {
-        try {
-            ServiceRegistry.register(serviceType, instance);
-            logger.info("Registered {} into CrownLib ServiceRegistry", serviceType.getSimpleName());
-        } catch (NoClassDefFoundError e) {
-            logger.warn("CrownLib not found; skipped ServiceRegistry registration for {}", serviceType.getSimpleName());
-        } catch (Throwable t) {
-            logger.warn("Failed to register {} with CrownLib ServiceRegistry; infra will continue running", serviceType.getSimpleName(), t);
-        }
-    }
 }
