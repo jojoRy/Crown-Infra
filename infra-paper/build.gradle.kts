@@ -13,9 +13,6 @@ dependencies {
 
     // Paper API
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
-
-    // ✅ Redis (Lettuce)
-    implementation("io.lettuce:lettuce-core:6.3.2.RELEASE")
 }
 
 java {

@@ -18,6 +18,9 @@ dependencies {
 
     // ✅ Message codec (Jackson)
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
+
+    // ✅ Netty realtime channel
+    implementation("io.netty:netty-handler:4.1.110.Final")
 }
 
 java {

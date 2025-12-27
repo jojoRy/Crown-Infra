@@ -1,20 +1,27 @@
 package kr.crownrpg.infra.api.redis;
 
+import kr.crownrpg.infra.api.lifecycle.ManagedLifecycle;
 import kr.crownrpg.infra.api.message.InfraMessage;
 
 /**
- * 서버 간 메시징을 위한 최소 계약.
- *
- * - publish: 채널로 메시지 발행
- * - subscribe: 채널 구독
- *
- * 주의:
- * - infra-api는 구현(lettuce 등)을 모른다.
- * - 재시도/ACK/큐잉은 v2 기능으로 미룸.
+ * Contract for publish/subscribe bus backed by Redis or other implementations.
  */
-public interface RedisBus {
+public interface RedisBus extends ManagedLifecycle, AutoCloseable {
+
+    @Override
+    void start();
+
+    @Override
+    void stop();
+
+    void subscribe(String channel, RedisMessageHandler handler);
 
     void publish(String channel, InfraMessage message);
 
-    RedisSubscription subscribe(String channel, RedisMessageHandler handler);
+    boolean isStarted();
+
+    @Override
+    default void close() {
+        stop();
+    }
 }
