@@ -1,6 +1,7 @@
 infra:
   environment: production
   server-id: paper-1
+  require-service-registry: true
 
 redis:
   host: localhost

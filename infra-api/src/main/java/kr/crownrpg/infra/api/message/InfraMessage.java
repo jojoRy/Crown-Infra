@@ -16,7 +16,12 @@ public record InfraMessage(
         MessageMeta meta
 ) {
 
-    public InfraMessage {
+    public InfraMessage(String environment,
+                        String fromServerId,
+                        String type,
+                        String payload,
+                        String payloadFormat,
+                        MessageMeta meta) {
         Preconditions.checkNotBlank(environment, "environment");
         Preconditions.checkNotBlank(fromServerId, "fromServerId");
         Preconditions.checkNotBlank(type, "type");
@@ -29,6 +34,9 @@ public record InfraMessage(
             normalizedFormat = payloadFormat.trim().toLowerCase();
         }
 
+        this.environment = environment;
+        this.fromServerId = fromServerId;
+        this.type = type;
         this.payload = normalizedPayload;
         this.payloadFormat = normalizedFormat;
         this.meta = meta == null ? MessageMeta.create() : meta;

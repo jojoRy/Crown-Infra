@@ -13,28 +13,41 @@ import kr.crownrpg.infra.api.redis.RedisBus;
 import kr.crownrpg.infra.api.redis.RedisMessageHandler;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * RedisBus implementation backed by Lettuce Pub/Sub.
+ * <p>
+ * Behavior notes:
+ * - subscribe() is allowed both before and after start(); pending subscriptions are remembered and applied on start.
+ * - Duplicate handler registration per channel is ignored and does not trigger re-subscription.
+ * - Executor is bounded to avoid unbounded thread creation; handlers are wrapped with exception guards so the bus keeps running.
  */
 public class LettuceRedisBus implements RedisBus {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final Logger LOGGER = Logger.getLogger(LettuceRedisBus.class.getName());
+    private static final int EXECUTOR_POOL_SIZE = 4;
+    private static final int EXECUTOR_QUEUE_CAPACITY = 256;
 
     private final RedisClientFactory clientFactory;
-    private final Map<String, List<RedisMessageHandler>> handlers = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<RedisMessageHandler>> pendingSubscriptions = new ConcurrentHashMap<>();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService executor = createExecutor();
 
     private RedisClient client;
     private StatefulRedisConnection<String, String> publishConnection;
@@ -67,8 +80,13 @@ public class LettuceRedisBus implements RedisBus {
             });
 
             RedisPubSubCommands<String, String> commands = subscribeConnection.sync();
-            for (String channel : handlers.keySet()) {
-                commands.subscribe(channel);
+            for (String channel : pendingSubscriptions.keySet()) {
+                try {
+                    commands.subscribe(channel);
+                } catch (Exception e) {
+                    // Keep bus alive; log to stderr for visibility.
+                    LOGGER.log(Level.WARNING, "Failed to subscribe channel '" + channel + "' on start", e);
+                }
             }
         } catch (Exception e) {
             started.set(false);
@@ -89,14 +107,28 @@ public class LettuceRedisBus implements RedisBus {
 
     @Override
     public void subscribe(String channel, RedisMessageHandler handler) {
-        ensureStarted();
+        if (stopped.get()) {
+            throw new IllegalStateException("RedisBus has been stopped and cannot accept new subscriptions");
+        }
         if (channel == null || channel.isBlank()) {
             throw new IllegalArgumentException("channel must not be blank");
         }
         Objects.requireNonNull(handler, "handler");
 
-        handlers.computeIfAbsent(channel, key -> new CopyOnWriteArrayList<>()).add(handler);
-        subscribeConnection.sync().subscribe(channel);
+        CopyOnWriteArrayList<RedisMessageHandler> handlers = pendingSubscriptions.computeIfAbsent(channel, key -> new CopyOnWriteArrayList<>());
+        boolean channelWasEmpty = handlers.isEmpty();
+        if (!handlers.contains(handler)) {
+            handlers.add(handler);
+        }
+
+        if (started.get() && channelWasEmpty) {
+            try {
+                subscribeConnection.sync().subscribe(channel);
+            } catch (Exception e) {
+                // Keep bus alive; pendingSubscriptions keeps the intent so it can be retried on restart.
+                LOGGER.log(Level.WARNING, "Failed to subscribe channel '" + channel + "'", e);
+            }
+        }
     }
 
     @Override
@@ -107,8 +139,13 @@ public class LettuceRedisBus implements RedisBus {
         }
         Objects.requireNonNull(message, "message");
         String payload = serialize(message);
-        RedisCommands<String, String> commands = publishConnection.sync();
-        commands.publish(channel, payload);
+        try {
+            RedisCommands<String, String> commands = publishConnection.sync();
+            commands.publish(channel, payload);
+        } catch (Exception e) {
+            // Prevent bus termination on publish failures.
+            LOGGER.log(Level.WARNING, "Failed to publish message to channel '" + channel + "'", e);
+        }
     }
 
     @Override
@@ -121,11 +158,19 @@ public class LettuceRedisBus implements RedisBus {
         try {
             message = OBJECT_MAPPER.readValue(json, InfraMessage.class);
         } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Failed to deserialize InfraMessage from channel '" + channel + "'", e);
             return;
         }
-        List<RedisMessageHandler> channelHandlers = new ArrayList<>(handlers.getOrDefault(channel, List.of()));
+        List<RedisMessageHandler> channelHandlers = List.copyOf(pendingSubscriptions.getOrDefault(channel, new CopyOnWriteArrayList<>()));
         for (RedisMessageHandler handler : channelHandlers) {
-            executor.submit(() -> handler.onMessage(channel, message));
+            executor.submit(() -> {
+                try {
+                    handler.onMessage(channel, message);
+                } catch (Exception e) {
+                    // Handler failure should not affect other handlers or the bus lifecycle.
+                    LOGGER.log(Level.WARNING, "Handler error on channel '" + channel + "'", e);
+                }
+            });
         }
     }
 
@@ -141,6 +186,29 @@ public class LettuceRedisBus implements RedisBus {
         if (!started.get()) {
             throw new IllegalStateException("RedisBus has not been started");
         }
+    }
+
+    private ExecutorService createExecutor() {
+        ThreadFactory threadFactory = new ThreadFactory() {
+            private final AtomicInteger sequence = new AtomicInteger(1);
+
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread thread = new Thread(r);
+                thread.setName("lettuce-redis-bus-" + sequence.getAndIncrement());
+                thread.setDaemon(true);
+                return thread;
+            }
+        };
+        return new ThreadPoolExecutor(
+                EXECUTOR_POOL_SIZE,
+                EXECUTOR_POOL_SIZE,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(EXECUTOR_QUEUE_CAPACITY),
+                threadFactory,
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
     }
 
     private void cleanup() {
