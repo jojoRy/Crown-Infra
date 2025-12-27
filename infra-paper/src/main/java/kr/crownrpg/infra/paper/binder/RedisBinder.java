@@ -1,5 +1,6 @@
 package kr.crownrpg.infra.paper.binder;
 
+import kr.crownrpg.infra.api.context.InfraContext;
 import kr.crownrpg.infra.api.redis.RedisBus;
 import kr.crownrpg.infra.core.redis.LettuceRedisBus;
 import kr.crownrpg.infra.core.redis.RedisClientFactory;
@@ -14,12 +15,14 @@ public final class RedisBinder {
 
     private final Logger logger;
     private final RedisYamlConfig config;
+    private final InfraContext context;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private LettuceRedisBus bus;
 
-    public RedisBinder(Logger logger, RedisYamlConfig config) {
+    public RedisBinder(Logger logger, RedisYamlConfig config, InfraContext context) {
         this.logger = logger;
         this.config = config;
+        this.context = context;
     }
 
     public synchronized void start() {
@@ -35,10 +38,10 @@ public final class RedisBinder {
                     Duration.ofMillis(config.timeoutMs()),
                     0
             );
-            this.bus = new LettuceRedisBus(factory);
+            this.bus = new LettuceRedisBus(factory, context);
             bus.start();
             started.set(true);
-            logger.info("RedisBinder started");
+            logger.info("RedisBinder가 시작되었습니다");
         } catch (Exception e) {
             started.set(false);
             throw e;
@@ -54,7 +57,7 @@ public final class RedisBinder {
                 bus.stop();
             }
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to stop RedisBinder", e);
+            logger.log(Level.SEVERE, "RedisBinder 종료에 실패했습니다", e);
         } finally {
             started.set(false);
         }
