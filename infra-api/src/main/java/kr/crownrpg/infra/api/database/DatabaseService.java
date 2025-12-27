@@ -12,4 +12,14 @@ public interface DatabaseService extends ManagedLifecycle {
     void executeVoid(TransactionVoidCallback callback);
 
     boolean isStarted();
+
+    DatabaseState state();
+
+    default boolean isRunning() {
+        return state() == DatabaseState.RUNNING;
+    }
+
+    default boolean isDegraded() {
+        return state() == DatabaseState.DEGRADED;
+    }
 }

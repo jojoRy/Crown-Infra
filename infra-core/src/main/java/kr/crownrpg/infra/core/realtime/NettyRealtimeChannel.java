@@ -3,6 +3,7 @@ package kr.crownrpg.infra.core.realtime;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import kr.crownrpg.infra.api.redis.RealtimeChannel;
+import kr.crownrpg.infra.api.redis.RealtimeChannelState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,6 +12,7 @@ import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Netty-backed realtime channel supporting client (Paper) and server (Velocity) roles.
@@ -34,6 +36,7 @@ public class NettyRealtimeChannel implements RealtimeChannel {
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
+    private final AtomicReference<RealtimeChannelState> state = new AtomicReference<>(RealtimeChannelState.STOPPED);
 
     private NettyServer server;
     private NettyClient client;
@@ -77,11 +80,44 @@ public class NettyRealtimeChannel implements RealtimeChannel {
         if (!started.compareAndSet(false, true)) {
             return;
         }
+        transitionState(RealtimeChannelState.CONNECTING, "실시간 채널을 초기화합니다");
         if (mode == Mode.SERVER) {
-            server = new NettyServer(host, port, environment, serverId, token, settings, registry, messageHandler);
-            server.start();
+            try {
+                server = new NettyServer(host, port, environment, serverId, token, settings, registry, messageHandler);
+                server.start();
+                transitionState(RealtimeChannelState.RUNNING, "실시간 서버 채널이 활성화되었습니다");
+            } catch (Exception e) {
+                transitionState(RealtimeChannelState.DEGRADED, "실시간 서버 채널 시작 실패");
+                logger.warn("실시간 서버 채널 시작 실패", e);
+            }
         } else {
-            client = new NettyClient(host, port, environment, serverId, token, settings, messageHandler, outboundQueue, droppedOutboundCount);
+            client = new NettyClient(host, port, environment, serverId, token, settings, messageHandler, outboundQueue, droppedOutboundCount, new NettyClient.NettyClientListener() {
+                @Override
+                public void onConnected() {
+                    transitionState(RealtimeChannelState.RUNNING, "실시간 클라이언트 채널 연결 성공");
+                }
+
+                @Override
+                public void onDisconnected() {
+                    if (!stopped.get()) {
+                        transitionState(RealtimeChannelState.CONNECTING, "실시간 클라이언트 채널 재연결 대기");
+                    }
+                }
+
+                @Override
+                public void onConnectionFailed(long attempt, long maxAttempts, Throwable cause) {
+                    if (cause != null) {
+                        logger.warn("실시간 클라이언트 연결 실패 (시도 {}/{})", attempt, maxAttempts, cause);
+                    } else {
+                        logger.warn("실시간 클라이언트 연결 실패 (시도 {}/{})", attempt, maxAttempts);
+                    }
+                    if (attempt >= maxAttempts) {
+                        transitionState(RealtimeChannelState.DEGRADED, "실시간 채널이 최대 재시도에 도달했습니다");
+                    } else {
+                        transitionState(RealtimeChannelState.CONNECTING, "실시간 채널 재연결 대기");
+                    }
+                }
+            });
             client.start();
         }
     }
@@ -102,6 +138,7 @@ public class NettyRealtimeChannel implements RealtimeChannel {
         }
         registry.closeAll();
         stopped.set(true);
+        transitionState(RealtimeChannelState.STOPPED, "실시간 채널이 종료되었습니다");
     }
 
     @Override
@@ -109,7 +146,12 @@ public class NettyRealtimeChannel implements RealtimeChannel {
         if (!started.get() || stopped.get()) {
             return false;
         }
-        return mode == Mode.SERVER ? (server != null && server.isStarted()) : (client != null && client.isStarted());
+        return state.get() == RealtimeChannelState.RUNNING;
+    }
+
+    @Override
+    public RealtimeChannelState state() {
+        return state.get();
     }
 
     @Override
@@ -119,6 +161,10 @@ public class NettyRealtimeChannel implements RealtimeChannel {
         }
         if (payload == null) {
             throw new IllegalArgumentException("payload must not be null");
+        }
+        if (state.get() != RealtimeChannelState.RUNNING) {
+            logOutboundDrop("실시간 채널이 비활성 상태여서 메시지를 드롭합니다");
+            return;
         }
         if (mode == Mode.SERVER) {
             if (!isAvailable()) {
@@ -170,6 +216,19 @@ public class NettyRealtimeChannel implements RealtimeChannel {
             logger.warn("실시간 outbound 큐 드롭 {}회 발생 ({}).", totalDrops, reason);
         } else {
             logger.debug("실시간 outbound 큐 드롭 {}회 발생 ({}).", totalDrops, reason);
+        }
+    }
+
+    private void transitionState(RealtimeChannelState newState, String message) {
+        RealtimeChannelState prev = state.getAndSet(newState);
+        if (prev == newState) {
+            return;
+        }
+        switch (newState) {
+            case RUNNING -> logger.info(message);
+            case CONNECTING -> logger.info(message);
+            case DEGRADED -> logger.warn(message);
+            case STOPPED -> logger.info(message);
         }
     }
 
