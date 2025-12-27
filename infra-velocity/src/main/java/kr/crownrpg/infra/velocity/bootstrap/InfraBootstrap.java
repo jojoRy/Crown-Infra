@@ -1,6 +1,6 @@
 package kr.crownrpg.infra.velocity.bootstrap;
 
-import kr.crownrpg.crownlib.ServiceRegistry;
+import kr.crownrpg.lib.service.ServiceRegistry;
 import kr.crownrpg.infra.api.context.InfraContext;
 import kr.crownrpg.infra.api.database.DatabaseService;
 import kr.crownrpg.infra.api.redis.RedisBus;
@@ -48,7 +48,7 @@ public final class InfraBootstrap {
             DatabaseYamlConfig databaseConfig = DatabaseYamlConfig.fromMap(castSection(root.get("database")));
 
             this.context = new InfraContext(infraConfig.environment(), infraConfig.serverId());
-            this.redisBinder = new RedisBinder(logger, redisConfig);
+            this.redisBinder = new RedisBinder(logger, redisConfig, context);
             this.databaseBinder = new DatabaseBinder(logger, databaseConfig);
 
             redisBinder.start();

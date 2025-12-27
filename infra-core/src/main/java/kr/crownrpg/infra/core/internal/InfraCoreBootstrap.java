@@ -25,7 +25,7 @@ public final class InfraCoreBootstrap {
     }
 
     public void start() {
-        this.redisBus = new LettuceRedisBus(redisFactory);
+        this.redisBus = new LettuceRedisBus(redisFactory, context);
         this.redisBus.start();
     }
 
