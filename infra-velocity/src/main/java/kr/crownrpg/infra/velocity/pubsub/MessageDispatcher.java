@@ -16,6 +16,8 @@ import org.slf4j.Logger;
  */
 public final class MessageDispatcher {
 
+    private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
+
     private final Logger logger;
     private final Map<String, List<Consumer<InfraMessage>>> handlers = new ConcurrentHashMap<>();
 
@@ -41,7 +43,7 @@ public final class MessageDispatcher {
             try {
                 consumer.accept(message);
             } catch (Exception e) {
-                logger.error("Error while handling message type {}", message.type(), e);
+                logger.error(LOG_PREFIX + "메시지 처리 중 오류가 발생했습니다: {}", message.type(), e);
             }
         }
     }

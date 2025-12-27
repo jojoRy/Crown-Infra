@@ -10,7 +10,7 @@ public record DatabaseYamlConfig(String host, int port, String database, String 
 
     public static DatabaseYamlConfig fromMap(Map<String, Object> section) {
         if (section == null) {
-            throw new IllegalArgumentException("database section is missing");
+            throw new IllegalArgumentException("database 섹션이 존재하지 않습니다.");
         }
         String host = trimToEmpty(section.get("host"));
         int port = toInt(section.get("port"), 3306);
@@ -20,13 +20,13 @@ public record DatabaseYamlConfig(String host, int port, String database, String 
         int poolSize = toInt(section.get("pool-size"), 10);
         Map<String, String> properties = readProperties(section.get("properties"));
         if (host.isBlank()) {
-            throw new IllegalArgumentException("database.host must not be blank");
+            throw new IllegalArgumentException("database.host 값이 비어 있습니다.");
         }
         if (database.isBlank()) {
-            throw new IllegalArgumentException("database.database must not be blank");
+            throw new IllegalArgumentException("database.database 값이 비어 있습니다.");
         }
         if (username.isBlank()) {
-            throw new IllegalArgumentException("database.username must not be blank");
+            throw new IllegalArgumentException("database.username 값이 비어 있습니다.");
         }
         return new DatabaseYamlConfig(host, port, database, username, password, poolSize, properties);
     }

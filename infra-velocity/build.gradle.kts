@@ -1,3 +1,5 @@
+import org.gradle.api.file.DuplicatesStrategy
+
 plugins {
     java
 }
@@ -22,8 +24,10 @@ dependencies {
     compileOnly("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
     annotationProcessor("com.velocitypowered:velocity-api:3.4.0-SNAPSHOT")
 
-    // ✅ CrownLib (ServiceRegistry exposure for infra services)
-    compileOnly("com.github.jojoRy:Crown-Lib:v1.0.2")
+}
+
+tasks.jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 java {

@@ -20,7 +20,7 @@ public final class MySqlBinder implements Closeable {
 
     public DatabaseClient client() {
         DatabaseClient c = client;
-        if (c == null) throw new IllegalStateException("MySqlBinder not started");
+        if (c == null) throw new IllegalStateException("MySqlBinder가 아직 시작되지 않았습니다.");
         return c;
     }
 

@@ -121,7 +121,7 @@ public final class InfraBootstrap {
         started = false;
     }
 
-    private void registerService(Class<?> serviceType, Object instance) {
+    private <T> void registerService(Class<T> serviceType, T instance) {
         try {
             ServiceRegistry.register(serviceType, instance);
             logger.info("Registered " + serviceType.getSimpleName() + " into CrownLib ServiceRegistry");

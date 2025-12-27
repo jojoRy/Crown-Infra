@@ -15,6 +15,8 @@ import java.nio.file.Path;
 @Plugin(id = "crowninfra", name = "CrownInfra", version = "1.0.0-SNAPSHOT", authors = {"CrownRPG"})
 public final class CrownInfraVelocityPlugin {
 
+    private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
+
     private final ProxyServer server;
     private final Logger logger;
     private final Path dataDirectory;
@@ -33,7 +35,7 @@ public final class CrownInfraVelocityPlugin {
         try {
             bootstrap.start();
         } catch (Exception e) {
-            logger.error("Failed to start CrownInfraVelocity", e);
+            logger.error(LOG_PREFIX + "부트스트랩 시작 중 오류가 발생했습니다.", e);
         }
     }
 
@@ -43,7 +45,7 @@ public final class CrownInfraVelocityPlugin {
             try {
                 bootstrap.stop();
             } catch (Exception e) {
-                logger.error("Error while stopping CrownInfraVelocity", e);
+                logger.error(LOG_PREFIX + "부트스트랩 종료 중 오류가 발생했습니다.", e);
             }
         }
     }

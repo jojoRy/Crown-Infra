@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RedisBinder implements AutoCloseable {
 
+    private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
+
     private final Logger logger;
     private final RedisYamlConfig config;
     private final InfraContext context;
@@ -40,7 +42,7 @@ public final class RedisBinder implements AutoCloseable {
             this.bus = new LettuceRedisBus(factory, context);
             bus.start();
             started.set(true);
-            logger.info("RedisBinder가 시작되었습니다");
+            logger.info(LOG_PREFIX + "Redis 연결이 성공적으로 완료되었습니다.");
         } catch (Exception e) {
             started.set(false);
             throw e;
@@ -56,7 +58,7 @@ public final class RedisBinder implements AutoCloseable {
                 bus.stop();
             }
         } catch (Exception e) {
-            logger.error("RedisBinder 종료에 실패했습니다", e);
+            logger.error(LOG_PREFIX + "Redis 연결 종료 중 오류가 발생했습니다.", e);
         } finally {
             started.set(false);
         }

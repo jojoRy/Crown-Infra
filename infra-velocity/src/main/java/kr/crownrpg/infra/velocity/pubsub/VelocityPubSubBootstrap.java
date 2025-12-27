@@ -19,6 +19,8 @@ public final class VelocityPubSubBootstrap implements AutoCloseable {
     private static final String TYPE_HEARTBEAT = MessageTypes.compose("server", "heartbeat");
     private static final String TYPE_NOTICE = MessageTypes.compose("broadcast", "notice");
 
+    private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
+
     private final Logger logger;
     private final RedisBus bus;
     private final InfraContext context;
@@ -45,6 +47,7 @@ public final class VelocityPubSubBootstrap implements AutoCloseable {
         );
         subscriber.start(channels);
         started.set(true);
+        logger.info(LOG_PREFIX + "Redis Pub/Sub 구독을 시작했습니다: {}", channels);
     }
 
     public synchronized void stop() {
@@ -53,6 +56,7 @@ public final class VelocityPubSubBootstrap implements AutoCloseable {
         }
         subscriber.stop();
         started.set(false);
+        logger.info(LOG_PREFIX + "Redis Pub/Sub 구독을 종료했습니다.");
     }
 
     @Override
@@ -84,15 +88,15 @@ public final class VelocityPubSubBootstrap implements AutoCloseable {
 
     private void registerHandlers() {
         dispatcher.register(TYPE_HEARTBEAT, message ->
-                logger.info("Heartbeat received from {} meta={} ", message.fromServerId(), message.meta().messageId()));
+                logger.info(LOG_PREFIX + "하트비트를 수신했습니다: 서버={} 메타={}", message.fromServerId(), message.meta().messageId()));
 
         dispatcher.register(TYPE_NOTICE, message ->
-                logger.info("Notice received: {}", message.payload()));
+                logger.info(LOG_PREFIX + "공지 메시지를 수신했습니다: {}", message.payload()));
     }
 
     private void ensureRunning() {
         if (!started.get()) {
-            throw new IllegalStateException("PubSub is not started");
+            throw new IllegalStateException("Pub/Sub이 시작되지 않았습니다.");
         }
     }
 }
