@@ -1,129 +1,74 @@
 package kr.crownrpg.infra.velocity.binder;
 
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.RedisURI;
-import io.lettuce.core.TimeoutOptions;
-import io.lettuce.core.ClientOptions;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
-import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import kr.crownrpg.infra.api.redis.RedisBus;
+import kr.crownrpg.infra.core.redis.LettuceRedisBus;
+import kr.crownrpg.infra.core.redis.RedisClientFactory;
+import kr.crownrpg.infra.velocity.config.RedisYamlConfig;
+import org.slf4j.Logger;
 
-import java.io.Closeable;
 import java.time.Duration;
-import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class RedisBinder implements Closeable {
+public final class RedisBinder implements AutoCloseable {
 
-    private RedisClient client;
-    private StatefulRedisConnection<String, String> connection;
-    private StatefulRedisPubSubConnection<String, String> pubSub;
+    private final Logger logger;
+    private final RedisYamlConfig config;
+    private final AtomicBoolean started = new AtomicBoolean(false);
+    private LettuceRedisBus bus;
 
-    public void start(Map<String, Object> redisConfig) {
-        Objects.requireNonNull(redisConfig, "redisConfig");
+    public RedisBinder(Logger logger, RedisYamlConfig config) {
+        this.logger = logger;
+        this.config = config;
+    }
 
-        String host = str(redisConfig.get("host"), "127.0.0.1");
-        int port = intVal(redisConfig.get("port"), 6379);
-        boolean ssl = bool(redisConfig.get("ssl"), false);
-        String password = str(redisConfig.get("password"), "");
-        long timeoutMs = longVal(redisConfig.get("timeout-ms"), 3000L);
-        String clientName = str(redisConfig.get("client-name"), "CrownInfra-Velocity");
-
-        RedisURI.Builder builder = RedisURI.builder()
-                .withHost(host)
-                .withPort(port)
-                .withSsl(ssl)
-                .withTimeout(Duration.ofMillis(timeoutMs));
-
-        if (!password.isBlank()) {
-            builder.withPassword(password.toCharArray());
+    public synchronized void start() {
+        if (started.get()) {
+            return;
         }
-
-        RedisURI uri = builder.build();
-
-        RedisClient rc = RedisClient.create(uri);
-        rc.setOptions(ClientOptions.builder()
-                .timeoutOptions(TimeoutOptions.enabled(Duration.ofMillis(timeoutMs)))
-                .build());
-
-        StatefulRedisConnection<String, String> conn = rc.connect();
-        StatefulRedisPubSubConnection<String, String> ps = rc.connectPubSub();
-
-        // client name (가능한 경우만)
         try {
-            RedisCommands<String, String> sync = conn.sync();
-            sync.clientSetname(clientName);
-        } catch (Throwable ignore) {}
-
-        // ping check
-        String pong = conn.sync().ping();
-        if (!"PONG".equalsIgnoreCase(pong)) {
-            ps.close();
-            conn.close();
-            rc.shutdown();
-            throw new IllegalStateException("Redis ping failed: " + pong);
+            RedisClientFactory factory = new RedisClientFactory(
+                    config.host(),
+                    config.port(),
+                    config.ssl(),
+                    config.password(),
+                    Duration.ofMillis(config.timeoutMs()),
+                    0
+            );
+            this.bus = new LettuceRedisBus(factory);
+            bus.start();
+            started.set(true);
+            logger.info("RedisBinder started");
+        } catch (Exception e) {
+            started.set(false);
+            throw e;
         }
-
-        this.client = rc;
-        this.connection = conn;
-        this.pubSub = ps;
     }
 
-    public StatefulRedisConnection<String, String> connection() {
-        if (connection == null) {
-            throw new IllegalStateException("RedisBinder not started");
+    public synchronized void stop() {
+        if (!started.get()) {
+            return;
         }
-        return connection;
+        try {
+            if (bus != null) {
+                bus.stop();
+            }
+        } catch (Exception e) {
+            logger.error("Failed to stop RedisBinder", e);
+        } finally {
+            started.set(false);
+        }
     }
 
-    public StatefulRedisPubSubConnection<String, String> pubSub() {
-        if (pubSub == null) {
-            throw new IllegalStateException("RedisBinder not started");
-        }
-        return pubSub;
+    public RedisBus getBus() {
+        return bus;
+    }
+
+    public boolean isStarted() {
+        return started.get();
     }
 
     @Override
     public void close() {
-        try {
-            if (pubSub != null) pubSub.close();
-        } catch (Throwable ignore) {}
-
-        try {
-            if (connection != null) connection.close();
-        } catch (Throwable ignore) {}
-
-        try {
-            if (client != null) client.shutdown();
-        } catch (Throwable ignore) {}
-
-        pubSub = null;
-        connection = null;
-        client = null;
-    }
-
-    /* ---------- util ---------- */
-
-    private static String str(Object v, String def) {
-        if (v == null) return def;
-        return String.valueOf(v);
-    }
-
-    private static int intVal(Object v, int def) {
-        if (v == null) return def;
-        if (v instanceof Number n) return n.intValue();
-        try { return Integer.parseInt(String.valueOf(v)); } catch (Exception e) { return def; }
-    }
-
-    private static long longVal(Object v, long def) {
-        if (v == null) return def;
-        if (v instanceof Number n) return n.longValue();
-        try { return Long.parseLong(String.valueOf(v)); } catch (Exception e) { return def; }
-    }
-
-    private static boolean bool(Object v, boolean def) {
-        if (v == null) return def;
-        if (v instanceof Boolean b) return b;
-        return Boolean.parseBoolean(String.valueOf(v));
+        stop();
     }
 }

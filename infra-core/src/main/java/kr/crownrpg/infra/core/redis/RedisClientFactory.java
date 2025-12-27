@@ -7,55 +7,45 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Lettuce RedisClient 생성 책임만 분리.
- * - Paper/Velocity 어디서든 동일하게 사용.
+ * Factory responsible for creating configured Lettuce {@link RedisClient} instances.
  */
 public final class RedisClientFactory {
 
-    private RedisClientFactory() {}
+    private final String host;
+    private final int port;
+    private final boolean useSsl;
+    private final String password;
+    private final Duration timeout;
+    private final int database;
 
-    public static RedisClient create(RedisConnectionSpec spec) {
-        Objects.requireNonNull(spec, "spec");
-
-        RedisURI.Builder b = RedisURI.builder()
-                .withHost(requireNotBlank(spec.host(), "host"))
-                .withPort(spec.port());
-
-        if (spec.ssl()) b.withSsl(true);
-        if (spec.timeout() != null) b.withTimeout(spec.timeout());
-        if (spec.password() != null && !spec.password().isBlank()) {
-            b.withPassword(spec.password().toCharArray());
-        }
-        if (spec.database() >= 0) {
-            b.withDatabase(spec.database());
-        }
-
-        return RedisClient.create(b.build());
+    public RedisClientFactory(String host, int port, boolean useSsl, String password, Duration timeout, int database) {
+        this.host = Objects.requireNonNull(host, "host");
+        this.port = port;
+        this.useSsl = useSsl;
+        this.password = password;
+        this.timeout = timeout == null ? Duration.ofSeconds(10) : timeout;
+        this.database = database;
     }
 
-    private static String requireNotBlank(String v, String name) {
-        if (v == null || v.isBlank()) throw new IllegalArgumentException("redis." + name + " is blank");
-        return v;
+    public RedisClient createClient() {
+        return RedisClient.create(createUri());
     }
 
-    /**
-     * infra-api는 config를 모르니까, core에서 최소 연결 스펙을 정의.
-     * (paper/velocity 쪽 config loader가 이걸 만들어서 넘겨주면 됨)
-     */
-    public record RedisConnectionSpec(
-            String host,
-            int port,
-            boolean ssl,
-            String password,
-            int database,
-            Duration timeout
-    ) {
-        public RedisConnectionSpec {
-            if (port <= 0) throw new IllegalArgumentException("redis.port must be > 0");
+    public RedisURI createUri() {
+        RedisURI.Builder builder = RedisURI.builder()
+                .withHost(host)
+                .withPort(port)
+                .withDatabase(database)
+                .withTimeout(timeout);
+
+        if (useSsl) {
+            builder.withSsl(true);
         }
 
-        public static RedisConnectionSpec of(String host, int port, boolean ssl, String password) {
-            return new RedisConnectionSpec(host, port, ssl, password, 0, Duration.ofSeconds(5));
+        if (password != null && !password.isEmpty()) {
+            builder.withPassword(password.toCharArray());
         }
+
+        return builder.build();
     }
 }

@@ -1,31 +1,35 @@
 package kr.crownrpg.infra.api.message;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 메시지 메타데이터.
- * - traceId: 추적용 (없으면 자동 생성)
- * - timestamp: 생성 시각 (없으면 자동 생성)
- * - headers: 확장 메타 (문자열 키/값)
+ * Standard metadata for messages.
  */
-public record MessageMeta(
-        String traceId,
-        Instant timestamp,
-        Map<String, String> headers
-) {
+public record MessageMeta(String messageId, long createdAtEpochMillis, Map<String, String> headers) {
+
     public MessageMeta {
-        if (traceId == null || traceId.isBlank()) traceId = UUID.randomUUID().toString();
-        if (timestamp == null) timestamp = Instant.now();
-        if (headers == null) headers = Map.of();
+        String id = messageId == null || messageId.isBlank() ? UUID.randomUUID().toString() : messageId;
+        long timestamp = createdAtEpochMillis <= 0 ? Instant.now().toEpochMilli() : createdAtEpochMillis;
+        this.messageId = id;
+        this.createdAtEpochMillis = timestamp;
+        this.headers = toUnmodifiableHeaders(headers);
     }
 
     public static MessageMeta create() {
-        return new MessageMeta(null, null, null);
+        return new MessageMeta(UUID.randomUUID().toString(), Instant.now().toEpochMilli(), Collections.emptyMap());
     }
 
-    public static MessageMeta withHeaders(Map<String, String> headers) {
-        return new MessageMeta(null, null, headers);
+    public MessageMeta withHeaders(Map<String, String> newHeaders) {
+        return new MessageMeta(messageId, createdAtEpochMillis, newHeaders);
+    }
+
+    private static Map<String, String> toUnmodifiableHeaders(Map<String, String> source) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return Collections.unmodifiableMap(Map.copyOf(source));
     }
 }

@@ -1,13 +1,26 @@
 package kr.crownrpg.infra.api.context;
 
+import kr.crownrpg.infra.api.Preconditions;
+
 /**
- * 모든 메시지/로깅/환경 분기에 사용되는 "서버 컨텍스트".
- * - environment: prod / dev / staging 등
- * - serverId: village-1, dungeon-2, proxy-1 ...
- * - kind: PAPER / VELOCITY
+ * Immutable context carrying environment and server identifier information.
  */
-public interface InfraContext {
-    String environment();
-    String serverId();
-    ServerKind kind();
+public record InfraContext(String environment, String serverId) {
+
+    public InfraContext {
+        Preconditions.checkNotBlank(environment, "environment");
+        Preconditions.checkNotBlank(serverId, "serverId");
+    }
+
+    public static InfraContext of(String environment, String serverId) {
+        return new InfraContext(environment, serverId);
+    }
+
+    @Override
+    public String toString() {
+        return "InfraContext{" +
+                "environment='" + environment + '\'' +
+                ", serverId='" + serverId + '\'' +
+                '}';
+    }
 }
