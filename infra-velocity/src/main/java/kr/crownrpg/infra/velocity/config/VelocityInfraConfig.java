@@ -29,7 +29,7 @@ public final class VelocityInfraConfig {
             Path file = dataDir.resolve("config.yml");
             if (!Files.exists(file)) {
                 try (InputStream in = loader.getResourceAsStream("config.yml")) {
-                    if (in == null) throw new IllegalStateException("Missing default config.yml in resources");
+                    if (in == null) throw new IllegalStateException("리소스에 기본 config.yml이 존재하지 않습니다.");
                     try (OutputStream out = Files.newOutputStream(file)) {
                         in.transferTo(out);
                     }
@@ -52,7 +52,7 @@ public final class VelocityInfraConfig {
             return new VelocityInfraConfig(env, serverId, db, redis);
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to load config.yml", e);
+            throw new RuntimeException("config.yml을 불러오지 못했습니다.", e);
         }
     }
 

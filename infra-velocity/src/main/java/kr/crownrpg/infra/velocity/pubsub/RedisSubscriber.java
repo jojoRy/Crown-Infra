@@ -15,6 +15,8 @@ import org.slf4j.Logger;
  */
 public final class RedisSubscriber {
 
+    private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
+
     private final Logger logger;
     private final RedisBus bus;
     private final InfraContext context;
@@ -33,17 +35,18 @@ public final class RedisSubscriber {
             return;
         }
         if (channels == null || channels.isEmpty()) {
-            throw new IllegalArgumentException("channels must not be empty");
+            throw new IllegalArgumentException("구독할 채널 목록이 비어 있습니다.");
         }
         for (String channel : channels) {
             bus.subscribe(channel, (ch, message) -> handle(message));
         }
         started.set(true);
-        logger.info("RedisSubscriber started for channels: {}", channels);
+        logger.info(LOG_PREFIX + "Redis 구독을 시작했습니다: {}", channels);
     }
 
     public synchronized void stop() {
         started.set(false);
+        logger.info(LOG_PREFIX + "Redis 구독을 종료했습니다.");
     }
 
     private void handle(InfraMessage message) {

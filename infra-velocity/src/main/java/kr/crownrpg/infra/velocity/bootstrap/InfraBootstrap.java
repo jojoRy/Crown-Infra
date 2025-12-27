@@ -22,6 +22,8 @@ import java.util.Objects;
 
 public final class InfraBootstrap {
 
+    private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
+
     private final Logger logger;
     private final Path dataDirectory;
 
@@ -56,10 +58,10 @@ public final class InfraBootstrap {
             this.pubSubBootstrap = new VelocityPubSubBootstrap(logger, redisBinder.getBus(), context);
             pubSubBootstrap.start();
 
-            logger.info("CrownInfraVelocity bootstrap completed for " + context);
+            logger.info("{}부트스트랩이 완료되었습니다: {}", LOG_PREFIX, context);
             started = true;
         } catch (Exception e) {
-            logger.error("Failed to start CrownInfraVelocity", e);
+            logger.error(LOG_PREFIX + "부트스트랩 중 예외가 발생했습니다.", e);
             safeStop(pubSubBootstrap);
             safeStop(databaseBinder);
             safeStop(redisBinder);
@@ -84,7 +86,7 @@ public final class InfraBootstrap {
         try {
             closeable.close();
         } catch (Exception e) {
-            logger.error("Error while stopping binder", e);
+            logger.error(LOG_PREFIX + "종료 처리 중 오류가 발생했습니다.", e);
         }
     }
 
@@ -106,14 +108,14 @@ public final class InfraBootstrap {
                 return new LinkedHashMap<>();
             }
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to load config.yml", e);
+            throw new IllegalStateException("config.yml을 불러오지 못했습니다.", e);
         }
     }
 
     private void copyDefaultConfig(Path target) throws IOException {
         try (InputStream in = InfraBootstrap.class.getClassLoader().getResourceAsStream("config.yml")) {
             if (in == null) {
-                throw new IllegalStateException("Default config.yml is missing from resources");
+                throw new IllegalStateException("기본 config.yml 리소스가 존재하지 않습니다.");
             }
             Files.copy(in, target);
         }
@@ -127,7 +129,7 @@ public final class InfraBootstrap {
         if (value instanceof Map) {
             return new LinkedHashMap<>((Map<String, Object>) value);
         }
-        throw new IllegalArgumentException("Invalid configuration section: " + value);
+        throw new IllegalArgumentException("잘못된 설정 섹션입니다: " + value);
     }
 
 }

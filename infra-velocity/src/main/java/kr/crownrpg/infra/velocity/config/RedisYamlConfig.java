@@ -6,7 +6,7 @@ public record RedisYamlConfig(String host, int port, boolean ssl, String passwor
 
     public static RedisYamlConfig fromMap(Map<String, Object> section) {
         if (section == null) {
-            throw new IllegalArgumentException("redis section is missing");
+            throw new IllegalArgumentException("redis 섹션이 존재하지 않습니다.");
         }
         String host = trimToEmpty(section.get("host"));
         int port = toInt(section.get("port"), 6379);
@@ -14,13 +14,13 @@ public record RedisYamlConfig(String host, int port, boolean ssl, String passwor
         String password = section.get("password") == null ? "" : section.get("password").toString();
         long timeout = toLong(section.get("timeout-ms"), 5000L);
         if (host.isBlank()) {
-            throw new IllegalArgumentException("redis.host must not be blank");
+            throw new IllegalArgumentException("redis.host 값이 비어 있습니다.");
         }
         if (port <= 0) {
-            throw new IllegalArgumentException("redis.port must be positive");
+            throw new IllegalArgumentException("redis.port 값은 0보다 커야 합니다.");
         }
         if (timeout <= 0) {
-            throw new IllegalArgumentException("redis.timeout-ms must be positive");
+            throw new IllegalArgumentException("redis.timeout-ms 값은 0보다 커야 합니다.");
         }
         return new RedisYamlConfig(host, port, ssl, password, timeout);
     }
