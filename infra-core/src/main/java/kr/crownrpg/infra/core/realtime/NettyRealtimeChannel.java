@@ -3,14 +3,14 @@ package kr.crownrpg.infra.core.realtime;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import kr.crownrpg.infra.api.redis.RealtimeChannel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Netty-backed realtime channel supporting client (Paper) and server (Velocity) roles.
@@ -22,14 +22,15 @@ public class NettyRealtimeChannel implements RealtimeChannel {
     private final String environment;
     private final String serverId;
     private final String token;
-    private final Set<String> allowedPeerIds;
     private final String host;
     private final int port;
     private final Mode mode;
     private final RealtimeMessageHandler messageHandler;
     private final ChannelRegistry registry;
     private final BlockingDeque<OutboundMessage> outboundQueue;
-    private final Logger logger = Logger.getLogger(NettyRealtimeChannel.class.getName());
+    private final RealtimeChannelSettings settings;
+    private final AtomicLong droppedOutboundCount = new AtomicLong(0);
+    private final Logger logger = LoggerFactory.getLogger(NettyRealtimeChannel.class);
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -40,7 +41,18 @@ public class NettyRealtimeChannel implements RealtimeChannel {
     public NettyRealtimeChannel(String environment,
                                 String serverId,
                                 String token,
-                                Set<String> allowedPeerIds,
+                                java.util.Set<String> allowedPeerIds,
+                                String host,
+                                int port,
+                                boolean serverMode,
+                                RealtimeMessageHandler messageHandler) {
+        this(environment, serverId, token, RealtimeChannelSettings.defaults(allowedPeerIds), host, port, serverMode, messageHandler);
+    }
+
+    public NettyRealtimeChannel(String environment,
+                                String serverId,
+                                String token,
+                                RealtimeChannelSettings settings,
                                 String host,
                                 int port,
                                 boolean serverMode,
@@ -48,13 +60,13 @@ public class NettyRealtimeChannel implements RealtimeChannel {
         this.environment = Objects.requireNonNull(environment, "environment");
         this.serverId = Objects.requireNonNull(serverId, "serverId");
         this.token = Objects.requireNonNull(token, "token");
-        this.allowedPeerIds = Set.copyOf(Objects.requireNonNull(allowedPeerIds, "allowedPeerIds"));
+        this.settings = Objects.requireNonNull(settings, "settings");
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
         this.mode = serverMode ? Mode.SERVER : Mode.CLIENT;
         this.messageHandler = Objects.requireNonNull(messageHandler, "messageHandler");
         this.registry = new ChannelRegistry();
-        this.outboundQueue = new LinkedBlockingDeque<>(512);
+        this.outboundQueue = new LinkedBlockingDeque<>(settings.outboundQueueCapacity());
     }
 
     @Override
@@ -66,10 +78,10 @@ public class NettyRealtimeChannel implements RealtimeChannel {
             return;
         }
         if (mode == Mode.SERVER) {
-            server = new NettyServer(host, port, environment, serverId, token, allowedPeerIds, registry, messageHandler);
+            server = new NettyServer(host, port, environment, serverId, token, settings, registry, messageHandler);
             server.start();
         } else {
-            client = new NettyClient(host, port, environment, serverId, token, allowedPeerIds, messageHandler, outboundQueue);
+            client = new NettyClient(host, port, environment, serverId, token, settings, messageHandler, outboundQueue, droppedOutboundCount);
             client.start();
         }
     }
@@ -131,22 +143,33 @@ public class NettyRealtimeChannel implements RealtimeChannel {
             ByteBuf buffer = HandshakeHandler.Protocol.encodeData(target.alloc(), targetNodeId, serverId, payload);
             target.writeAndFlush(buffer);
         } else {
-            logger.log(Level.WARNING, "Dropping realtime send to unregistered or inactive peer: " + targetNodeId);
+            logger.warn("실시간 대상 '{}'이(가) 미등록/비활성 상태여서 메시지를 드롭합니다", targetNodeId);
         }
     }
 
     private void queueAndSendFromClient(String targetNodeId, byte[] payload) {
         OutboundMessage message = new OutboundMessage(targetNodeId, payload);
         if (!outboundQueue.offer(message)) {
-            // Drop oldest to make room; this enforces the bounded queue policy.
-            outboundQueue.poll();
+            OutboundMessage dropped = outboundQueue.poll();
+            if (dropped != null) {
+                logOutboundDrop("outbound 큐 포화로 가장 오래된 메시지 드롭");
+            }
             if (!outboundQueue.offer(message)) {
-                logger.log(Level.WARNING, "Dropping realtime send due to full outbound queue: " + targetNodeId);
+                logOutboundDrop("outbound 큐 포화로 신규 메시지 드롭");
                 return;
             }
         }
         if (client != null && client.isStarted()) {
             client.drainQueue();
+        }
+    }
+
+    private void logOutboundDrop(String reason) {
+        long totalDrops = droppedOutboundCount.incrementAndGet();
+        if (totalDrops % settings.dropWarnThreshold() == 0) {
+            logger.warn("실시간 outbound 큐 드롭 {}회 발생 ({}).", totalDrops, reason);
+        } else {
+            logger.debug("실시간 outbound 큐 드롭 {}회 발생 ({}).", totalDrops, reason);
         }
     }
 
