@@ -5,6 +5,7 @@ plugins {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://jitpack.io")
 }
 
 dependencies {
@@ -13,6 +14,9 @@ dependencies {
 
     // Paper API
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+
+    // CrownLib (ServiceRegistry exposure for infra services)
+    compileOnly("com.github.jojoRy:Crown-Lib:v1.0.2")
 }
 
 java {
