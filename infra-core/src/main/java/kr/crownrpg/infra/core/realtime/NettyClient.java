@@ -42,6 +42,7 @@ public final class NettyClient {
     private final AtomicLong reconnectFailures = new AtomicLong();
     private final AtomicLong outboundDropCounter;
     private final Logger logger = LoggerFactory.getLogger(NettyClient.class);
+    private final NettyClientListener listener;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopping = new AtomicBoolean(false);
@@ -58,7 +59,8 @@ public final class NettyClient {
                        RealtimeChannelSettings settings,
                        RealtimeMessageHandler messageHandler,
                        BlockingDeque<NettyRealtimeChannel.OutboundMessage> outboundQueue,
-                       AtomicLong outboundDropCounter) {
+                       AtomicLong outboundDropCounter,
+                       NettyClientListener listener) {
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
         this.environment = Objects.requireNonNull(environment, "environment");
@@ -68,6 +70,7 @@ public final class NettyClient {
         this.messageHandler = Objects.requireNonNull(messageHandler, "messageHandler");
         this.outboundQueue = Objects.requireNonNull(outboundQueue, "outboundQueue");
         this.outboundDropCounter = Objects.requireNonNull(outboundDropCounter, "outboundDropCounter");
+        this.listener = Objects.requireNonNull(listener, "listener");
     }
 
     public void start() {
@@ -120,6 +123,7 @@ public final class NettyClient {
         long attemptNumber = reconnectAttempts.incrementAndGet();
         if (attemptNumber > settings.maxReconnectAttempts()) {
             logger.warn("재연결 최대 시도({})를 초과하여 중단합니다", settings.maxReconnectAttempts());
+            listener.onConnectionFailed(attemptNumber, settings.maxReconnectAttempts(), null);
             return;
         }
         long drops = outboundDropCounter.get();
@@ -157,6 +161,7 @@ public final class NettyClient {
                                             reconnectAttempts.set(0);
                                             reconnectFailures.set(0);
                                             drainQueue();
+                                            listener.onConnected();
                                         }
                                     }));
                         }
@@ -167,14 +172,16 @@ public final class NettyClient {
                 handshakeComplete.set(false);
                 if (!stopping.get()) {
                     scheduleReconnect(false);
+                    listener.onDisconnected();
                 }
             });
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while starting Netty client", e);
+            listener.onConnectionFailed(attemptNumber, settings.maxReconnectAttempts(), e);
         } catch (Exception e) {
             long failures = reconnectFailures.incrementAndGet();
             logger.warn("실시간 클라이언트 연결 실패 (시도 {} / 실패 누적 {} / 허용 {})", attemptNumber, failures, settings.maxReconnectAttempts(), e);
+            listener.onConnectionFailed(attemptNumber, settings.maxReconnectAttempts(), e);
             if (!stopping.get()) {
                 scheduleReconnect(false);
             }
@@ -183,5 +190,13 @@ public final class NettyClient {
 
     private void scheduleReconnect(boolean immediate) {
         connectWithBackoff(immediate);
+    }
+
+    interface NettyClientListener {
+        void onConnected();
+
+        void onDisconnected();
+
+        void onConnectionFailed(long attempt, long maxAttempts, Throwable cause);
     }
 }

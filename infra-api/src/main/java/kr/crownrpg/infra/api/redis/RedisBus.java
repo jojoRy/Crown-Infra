@@ -20,6 +20,16 @@ public interface RedisBus extends ManagedLifecycle, AutoCloseable {
 
     boolean isStarted();
 
+    RedisBusState state();
+
+    default boolean isRunning() {
+        return state() == RedisBusState.RUNNING;
+    }
+
+    default boolean isDegraded() {
+        return state() == RedisBusState.DEGRADED;
+    }
+
     @Override
     default void close() {
         stop();

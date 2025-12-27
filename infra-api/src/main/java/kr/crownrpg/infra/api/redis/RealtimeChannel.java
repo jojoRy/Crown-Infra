@@ -11,5 +11,15 @@ public interface RealtimeChannel {
 
     boolean isAvailable();
 
+    RealtimeChannelState state();
+
+    default boolean isRunning() {
+        return state() == RealtimeChannelState.RUNNING;
+    }
+
+    default boolean isDegraded() {
+        return state() == RealtimeChannelState.DEGRADED;
+    }
+
     void send(String targetNodeId, byte[] payload);
 }
