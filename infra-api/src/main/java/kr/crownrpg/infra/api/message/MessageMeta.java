@@ -10,12 +10,14 @@ import java.util.UUID;
  */
 public record MessageMeta(String messageId, long createdAtEpochMillis, Map<String, String> headers) {
 
-    public MessageMeta {
+    public MessageMeta(String messageId, long createdAtEpochMillis, Map<String, String> headers) {
         String id = messageId == null || messageId.isBlank() ? UUID.randomUUID().toString() : messageId;
         long timestamp = createdAtEpochMillis <= 0 ? Instant.now().toEpochMilli() : createdAtEpochMillis;
+        Map<String, String> normalizedHeaders = toUnmodifiableHeaders(headers);
+
         this.messageId = id;
         this.createdAtEpochMillis = timestamp;
-        this.headers = toUnmodifiableHeaders(headers);
+        this.headers = normalizedHeaders;
     }
 
     public static MessageMeta create() {
