@@ -21,7 +21,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Netty server endpoint used by the Velocity proxy to route realtime payloads.
+ * Velocity 프록시에서 실시간 페이로드를 중계하기 위해 동작하는 Netty 서버 엔드포인트.
+ * <p>
+ * 채널 인증과 프레이밍, 유휴 감지를 처리하며 {@link RealtimeMessageHandler}로 메시지를 넘겨준다.
  */
 public final class NettyServer {
 
@@ -58,6 +60,10 @@ public final class NettyServer {
         this.messageHandler = Objects.requireNonNull(messageHandler, "messageHandler");
     }
 
+    /**
+     * 실시간 서버를 비동기로 부트스트랩한다.
+     * 이미 시작된 경우 중복 실행을 막고, 이벤트 루프와 파이프라인 구성을 담당한다.
+     */
     public void start() {
         if (!started.compareAndSet(false, true)) {
             return;
@@ -95,6 +101,10 @@ public final class NettyServer {
         return started.get() && serverChannel != null && serverChannel.isActive();
     }
 
+    /**
+     * 바인딩된 서버와 모든 연결을 안전하게 종료한다.
+     * 레지스트리의 채널을 먼저 닫은 뒤 이벤트 루프를 순서대로 해제한다.
+     */
     public void stop() {
         if (!started.get()) {
             return;

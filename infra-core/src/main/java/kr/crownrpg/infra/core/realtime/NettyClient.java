@@ -26,7 +26,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import static kr.crownrpg.infra.core.realtime.HandshakeHandler.Protocol;
 
 /**
- * Netty client endpoint used by Paper servers to connect to the Velocity realtime server.
+ * Paper 서버가 Velocity 실시간 서버에 연결하기 위해 사용하는 Netty 클라이언트 엔드포인트.
+ * <p>
+ * 재연결, 핸드셰이크, 아웃바운드 메시지 큐 드레인 로직을 모두 포함한다.
  */
 public final class NettyClient {
 
@@ -73,6 +75,9 @@ public final class NettyClient {
         this.listener = Objects.requireNonNull(listener, "listener");
     }
 
+    /**
+     * 실시간 연결을 시작하고 백오프를 적용한 재연결 스케줄을 초기화한다.
+     */
     public void start() {
         if (!started.compareAndSet(false, true)) {
             return;
@@ -88,6 +93,10 @@ public final class NettyClient {
         return started.get() && handshakeComplete.get() && channel != null && channel.isActive();
     }
 
+    /**
+     * 핸드셰이크 완료 후 누적된 아웃바운드 메시지를 소켓에 비워 넣는다.
+     * 채널이 활성화되지 않았다면 아무 작업도 하지 않는다.
+     */
     public void drainQueue() {
         Channel ch = channel;
         if (!handshakeComplete.get() || ch == null || !ch.isActive()) {
@@ -101,6 +110,9 @@ public final class NettyClient {
         ch.flush();
     }
 
+    /**
+     * 클라이언트를 종료하고 추가 재연결을 막는다.
+     */
     public void stop() {
         stopping.set(true);
         if (!started.get()) {

@@ -20,6 +20,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Velocity 프록시에서 CrownInfra 구성 요소를 시작/종료하는 부트스트랩 엔트리.
+ * config.yml을 로드해 Redis/DB/실시간 PubSub을 순서대로 준비한다.
+ */
 public final class InfraBootstrap {
 
     private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";
@@ -38,6 +42,10 @@ public final class InfraBootstrap {
         this.dataDirectory = Objects.requireNonNull(dataDirectory, "dataDirectory");
     }
 
+    /**
+     * 설정 파일을 읽어 컨텍스트와 바인더를 초기화하고 각 서비스를 부팅한다.
+     * 오류 발생 시 부분적으로 시작된 리소스를 안전하게 중단한다.
+     */
     public synchronized void start() {
         if (started) {
             return;
@@ -69,6 +77,9 @@ public final class InfraBootstrap {
         }
     }
 
+    /**
+     * 부팅된 구성 요소를 역순으로 종료한다.
+     */
     public synchronized void stop() {
         if (!started) {
             return;
@@ -79,6 +90,9 @@ public final class InfraBootstrap {
         started = false;
     }
 
+    /**
+     * 종료 과정에서 발생하는 예외를 잡아 로그로만 남기고 흐름을 이어간다.
+     */
     private void safeStop(AutoCloseable closeable) {
         if (closeable == null) {
             return;
