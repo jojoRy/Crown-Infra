@@ -17,6 +17,10 @@ import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * Paper 플러그인에서 인프라 구성 요소를 초기화·종료하는 부트스트랩 진입점.
+ * 설정 로드 → Redis/DB 바인더 초기화 → PubSub 부팅 → 서비스 레지스트리 등록 순으로 동작한다.
+ */
 public final class InfraBootstrap {
 
     private final JavaPlugin plugin;
@@ -34,6 +38,10 @@ public final class InfraBootstrap {
         this.logger = plugin.getLogger();
     }
 
+    /**
+     * 플러그인 설정을 읽고 Redis/DB/메시지 버스를 순서대로 시작한다.
+     * 실패 시 각 구성 요소를 안전하게 내려가며 플러그인을 비활성화한다.
+     */
     public synchronized void start() {
         if (started) {
             return;
@@ -93,6 +101,9 @@ public final class InfraBootstrap {
         }
     }
 
+    /**
+     * 등록된 구성 요소를 역순으로 종료하여 리소스 누수를 방지한다.
+     */
     public synchronized void stop() {
         if (!started) {
             return;
@@ -121,6 +132,10 @@ public final class InfraBootstrap {
         started = false;
     }
 
+    /**
+     * CrownLib의 ServiceRegistry가 존재할 경우 서비스 인스턴스를 등록한다.
+     * 라이브러리가 없는 환경에서도 예외를 삼켜 서버 구동을 이어갈 수 있도록 방어적으로 처리한다.
+     */
     private <T> void registerService(Class<T> serviceType, T instance) {
         try {
             ServiceRegistry.register(serviceType, instance);

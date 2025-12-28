@@ -13,6 +13,10 @@ import org.slf4j.Logger;
 import java.nio.file.Path;
 
 @Plugin(id = "crowninfra", name = "CrownInfra", version = "1.0.0-SNAPSHOT", authors = {"CrownRPG"})
+/**
+ * Velocity 프록시에 탑재되는 CrownInfra 메인 플러그인.
+ * 프록시 이벤트를 통해 {@link InfraBootstrap}을 구동/정지한다.
+ */
 public final class CrownInfraVelocityPlugin {
 
     private static final String LOG_PREFIX = "[CrownInfra-Velocity] ";

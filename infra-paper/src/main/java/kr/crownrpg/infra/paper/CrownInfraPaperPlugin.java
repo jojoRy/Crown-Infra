@@ -5,6 +5,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.logging.Level;
 
+/**
+ * Paper 서버에서 구동되는 CrownInfra 메인 플러그인.
+ * Bukkit 수명주기 훅을 통해 {@link InfraBootstrap}을 시작/종료한다.
+ */
 public final class CrownInfraPaperPlugin extends JavaPlugin {
 
     private InfraBootstrap bootstrap;
