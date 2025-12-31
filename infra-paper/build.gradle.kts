@@ -16,7 +16,7 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
 
     // CrownLib (ServiceRegistry exposure for infra services)
-    compileOnly("com.github.jojoRy:Crown-Lib:v1.0.2")
+    compileOnly("com.github.jojoRy:Crown-Lib:1.0.3")
 }
 
 java {
