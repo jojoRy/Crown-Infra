@@ -31,7 +31,6 @@ public final class InfraBootstrap {
     private DatabaseBinder databaseBinder;
     private PaperPubSubBootstrap pubSubBootstrap;
     private boolean started;
-    private boolean requireServiceRegistry;
 
     public InfraBootstrap(JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -55,7 +54,6 @@ public final class InfraBootstrap {
             DatabaseYamlConfig databaseConfig = DatabaseYamlConfig.fromConfig(config.getConfigurationSection("database"));
 
             this.context = new InfraContext(infraConfig.environment(), infraConfig.serverId());
-            this.requireServiceRegistry = infraConfig.requireServiceRegistry();
 
             this.redisBinder = new RedisBinder(logger, redisConfig, context);
 
@@ -67,9 +65,9 @@ public final class InfraBootstrap {
             this.pubSubBootstrap = new PaperPubSubBootstrap(logger, redisBinder.getBus(), context);
             pubSubBootstrap.start();
 
-            registerService(InfraContext.class, context);
-            registerService(RedisBus.class, redisBinder.getBus());
-            registerService(DatabaseService.class, databaseBinder.getService());
+            registerRequiredService(InfraContext.class, context);
+            registerRequiredService(RedisBus.class, redisBinder.getBus());
+            registerRequiredService(DatabaseService.class, databaseBinder.getService());
 
             logger.info("CrownInfra bootstrap completed for " + context);
             started = true;
@@ -133,18 +131,16 @@ public final class InfraBootstrap {
     }
 
     /**
-     * CrownLib의 ServiceRegistry가 존재할 경우 서비스 인스턴스를 등록한다.
-     * 라이브러리가 없는 환경에서도 예외를 삼켜 서버 구동을 이어갈 수 있도록 방어적으로 처리한다.
+     * CrownLib의 ServiceRegistry에 필수 서비스들을 등록한다.
+     * 등록 실패 시 부팅을 중단하고 예외를 전파한다.
      */
-    private <T> void registerService(Class<T> serviceType, T instance) {
+    private <T> void registerRequiredService(Class<T> serviceType, T instance) {
         try {
             ServiceRegistry.register(serviceType, instance);
             logger.info("Registered " + serviceType.getSimpleName() + " into CrownLib ServiceRegistry");
-        } catch (NoClassDefFoundError e) {
-            logger.warning("CrownLib not found; skipped ServiceRegistry registration for " + serviceType.getSimpleName());
         } catch (Throwable t) {
-            Level level = requireServiceRegistry ? Level.SEVERE : Level.WARNING;
-            logger.log(level, "Failed to register " + serviceType.getSimpleName() + " with CrownLib ServiceRegistry; infra will continue running", t);
+            logger.log(Level.SEVERE, "Failed to register " + serviceType.getSimpleName() + " with CrownLib ServiceRegistry", t);
+            throw new IllegalStateException("CrownInfraPaper startup failed: required service registration unsuccessful", t);
         }
     }
 }
